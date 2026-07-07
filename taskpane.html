@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SharePoint Filing</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="./lib/msal-browser.min.js"></script>
+  <style>
+    /* ============================================================
+       Outlook-native dark theme. Fluent 2 neutrals + Microsoft blue.
+       Segoe UI throughout. Mirrors the Outlook reading-pane dark look.
+       ============================================================ */
+    :root{
+      --canvas:      #1B1A19;
+      --layer:       #252423;
+      --layer-2:     #2D2C2B;
+      --layer-3:     #323130;
+      --stroke:      #3B3A39;
+      --stroke-soft: #323130;
+      --text:        #FFFFFF;
+      --text-2:      #D2D0CE;
+      --text-3:      #A19F9D;
+      --text-4:      #797775;
+      --brand:       #479EF5;
+      --brand-2:     #2B88D8;
+      --brand-rest:  #0F6CBD;
+      --brand-tint:  #123453;
+      --danger:      #F1707B;
+      --radius:      4px;
+      --sans:"Segoe UI","Segoe UI Web (West European)",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;height:100%;}
+    body{
+      font-family:var(--sans);
+      background:var(--canvas);
+      color:var(--text);
+      font-size:14px;
+      line-height:1.4;
+      -webkit-font-smoothing:antialiased;
+    }
+    .app{display:flex;flex-direction:column;height:100vh;max-width:520px;margin:0 auto;}
+
+    /* ---------- header ---------- */
+    header{
+      padding:14px 16px 12px;
+      border-bottom:1px solid var(--stroke);
+      background:var(--canvas);
+    }
+    .brand{
+      font-size:12px;font-weight:600;letter-spacing:.2px;
+      color:var(--text-3);display:flex;align-items:center;gap:8px;
+    }
+    .brand svg{width:16px;height:16px;flex:0 0 auto;}
+    .subject{
+      margin-top:9px;font-size:15px;font-weight:600;color:var(--text);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+
+    /* ---------- attachment picker ---------- */
+    .att-wrap{margin-top:12px;}
+    .att-label{
+      font-size:12px;color:var(--text-3);margin-bottom:6px;
+      display:flex;align-items:center;gap:6px;
+    }
+    .att-label svg{width:13px;height:13px;}
+    .att-list{display:flex;flex-direction:column;gap:6px;}
+    .att{
+      display:flex;align-items:center;gap:10px;
+      padding:9px 10px;border:1px solid var(--stroke);border-radius:var(--radius);
+      background:var(--layer);cursor:pointer;transition:background .1s,border-color .1s;
+    }
+    .att:hover{background:var(--layer-2);}
+    .att.sel{border-color:var(--brand);background:var(--brand-tint);}
+    .att .ficon{width:28px;height:28px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
+    .att .fmeta{flex:1;min-width:0;display:flex;flex-direction:column;}
+    .att .fname{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+    .att .fsize{font-size:11.5px;color:var(--text-3);margin-top:1px;}
+    .att .radio{
+      width:18px;height:18px;flex:0 0 auto;border-radius:50%;
+      border:1.5px solid var(--text-4);position:relative;transition:border-color .1s;
+    }
+    .att.sel .radio{border-color:var(--brand);}
+    .att.sel .radio::after{content:"";position:absolute;inset:3.5px;border-radius:50%;background:var(--brand);}
+    .att-hint{font-size:11.5px;color:var(--text-4);margin-top:7px;}
+
+    /* multi-select toggle */
+    .multi-toggle{
+      margin-left:auto;font-family:var(--sans);font-size:11.5px;font-weight:600;
+      background:transparent;border:1px solid var(--stroke);color:var(--brand);
+      border-radius:4px;padding:3px 8px;cursor:pointer;transition:background .1s,border-color .1s;
+    }
+    .multi-toggle:hover{background:var(--layer-2);border-color:var(--brand);}
+    .multi-toggle.on{background:var(--brand-tint);border-color:var(--brand);color:var(--brand);}
+
+    /* multi-select: show square checks instead of radios */
+    .att.multi .radio{border-radius:3px;}
+    .att.multi.sel .radio::after{border-radius:1px;inset:3px;}
+
+    /* inline rename */
+    .rename-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+    .rename-row.hidden{display:none;}
+    .rename-label{font-size:11.5px;color:var(--text-3);flex:0 0 auto;}
+    .rename-row input{
+      flex:1;min-width:0;background:var(--canvas);border:1px solid var(--stroke);
+      color:var(--text);border-radius:4px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;
+    }
+    .rename-row input:focus{outline:none;border-color:var(--brand);}
+    .rename-cancel{
+      flex:0 0 auto;background:transparent;border:none;color:var(--text-3);
+      font-family:var(--sans);font-size:11px;cursor:pointer;padding:4px 6px;
+    }
+    .rename-cancel:hover{color:var(--text);}
+    /* pencil affordance on the selected single attachment */
+    .att .edit-name{
+      flex:0 0 auto;width:26px;height:26px;border-radius:4px;border:none;background:transparent;
+      color:var(--text-3);cursor:pointer;display:none;align-items:center;justify-content:center;
+    }
+    .att.sel .edit-name{display:flex;}
+    .att .edit-name:hover{background:var(--layer-3);color:var(--brand);}
+    .att .edit-name svg{width:15px;height:15px;}
+
+    /* Save-email-as-.pst */
+    .pst-block{margin-top:10px;border-top:1px solid var(--stroke-soft);padding-top:10px;}
+    .pst-toggle{display:flex;align-items:flex-start;gap:10px;cursor:pointer;}
+    .pst-check{
+      width:18px;height:18px;flex:0 0 auto;border-radius:4px;border:1.5px solid var(--text-4);
+      position:relative;margin-top:1px;transition:border-color .1s,background .1s;
+    }
+    .pst-block.on .pst-check{border-color:var(--brand);background:var(--brand-rest);}
+    .pst-block.on .pst-check::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
+    .pst-title{font-size:13px;font-weight:600;color:var(--text);display:block;}
+    .pst-sub{font-size:11.5px;color:var(--text-3);display:block;margin-top:1px;}
+    .pst-scope{display:flex;flex-direction:column;gap:6px;margin-top:9px;margin-left:28px;}
+    .pst-scope.hidden{display:none;}
+    .scope-opt{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);cursor:pointer;}
+    .scope-opt .dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--text-4);position:relative;flex:0 0 auto;}
+    .scope-opt.sel .dot{border-color:var(--brand);}
+    .scope-opt.sel .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--brand);}
+
+    /* ---------- scroll body ---------- */
+    .body{flex:1 1 auto;overflow-y:auto;padding:14px 16px 8px;}
+
+    /* ---------- section label ---------- */
+    .sec{display:flex;align-items:center;justify-content:space-between;margin:2px 0 9px;}
+    .sec h2{
+      font-size:13px;font-weight:600;color:var(--text-2);margin:0;
+      display:flex;align-items:center;gap:7px;
+    }
+    .sec h2 svg{width:15px;height:15px;color:var(--brand);}
+    .sec .sub{font-size:11.5px;color:var(--text-4);}
+
+    /* ---------- recommendations ---------- */
+    .rec{display:flex;flex-direction:column;gap:7px;margin-bottom:6px;}
+    .rec-card{
+      border:1px solid var(--stroke);border-radius:var(--radius);
+      background:var(--layer);padding:11px 12px;cursor:pointer;
+      transition:background .1s,border-color .1s;
+    }
+    .rec-card:hover{background:var(--layer-2);border-color:#4a4948;}
+    .rec-card.chosen{border-color:var(--brand);background:var(--brand-tint);}
+    .rec-top{display:flex;align-items:center;gap:10px;}
+    .rank{
+      font-size:11px;font-weight:600;color:var(--text-3);
+      background:var(--layer-3);border-radius:3px;padding:2px 6px;flex:0 0 auto;min-width:26px;text-align:center;
+    }
+    .rec-card.chosen .rank{background:var(--brand-rest);color:#fff;}
+    .rec-path{flex:1;min-width:0;}
+    .rec-path .site{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .rec-path .leaf{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+    .conf{flex:0 0 auto;text-align:right;min-width:52px;}
+    .conf .pct{font-size:15px;font-weight:700;color:var(--brand);line-height:1;}
+    .conf .lbl{font-size:9.5px;letter-spacing:.3px;text-transform:uppercase;color:var(--text-4);margin-top:2px;}
+    .meter{height:4px;border-radius:2px;background:var(--layer-3);margin-top:10px;overflow:hidden;}
+    .meter > i{display:block;height:100%;background:var(--brand);border-radius:2px;transition:width .5s ease;}
+    .rec-why{font-size:12px;color:var(--text-3);margin-top:9px;display:none;line-height:1.35;}
+    .rec-card.chosen .rec-why{display:block;}
+
+    .rec-loading,.rec-empty{
+      font-size:12.5px;color:var(--text-3);
+      padding:14px 12px;border:1px solid var(--stroke);border-radius:var(--radius);
+      text-align:center;background:var(--layer);
+    }
+    .pulse{animation:pulse 1.3s ease-in-out infinite;}
+    @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+
+    /* ---------- divider ---------- */
+    .or{
+      display:flex;align-items:center;gap:12px;margin:18px 0 12px;
+      color:var(--text-4);font-size:11.5px;
+    }
+    .or::before,.or::after{content:"";flex:1;height:1px;background:var(--stroke);}
+
+    /* ---------- breadcrumb ---------- */
+    .crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;margin-bottom:10px;font-size:12px;}
+    .crumbs > *{flex:0 0 auto;width:auto;}
+    .crumb{color:var(--brand);cursor:pointer;background:none;border:none;padding:2px 3px;font:inherit;white-space:nowrap;}
+    .crumb:hover{text-decoration:underline;}
+    .crumb.cur{color:var(--text-3);cursor:default;}
+    .crumb.cur:hover{text-decoration:none;}
+    .crumb-sep{color:var(--text-4);}
+
+    /* ---------- select current folder ---------- */
+    .pick-here{
+      width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+      background:var(--layer);border:1px solid var(--stroke);color:var(--text-2);
+      border-radius:var(--radius);padding:9px;margin-bottom:10px;font-size:13px;font-weight:600;
+      cursor:pointer;transition:background .1s,border-color .1s;font-family:var(--sans);
+    }
+    .pick-here:hover{background:var(--layer-2);border-color:var(--brand);color:var(--text);}
+    .pick-here svg{width:15px;height:15px;color:var(--brand);}
+    .pick-here.hidden{display:none;}
+
+    /* ---------- listing ---------- */
+    .listing{border:1px solid var(--stroke);border-radius:var(--radius);overflow:hidden;background:var(--layer);}
+    .node{
+      display:flex;align-items:center;gap:10px;padding:9px 12px;
+      border-bottom:1px solid var(--stroke-soft);cursor:pointer;transition:background .1s;
+    }
+    .node:last-child{border-bottom:none;}
+    .node:hover{background:var(--layer-2);}
+    .node .ico{flex:0 0 20px;height:20px;display:flex;align-items:center;justify-content:center;}
+    .node.folder .ico{color:#DCB67A;}
+    .node.file .ico{color:var(--text-3);}
+    .node .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;}
+    .node .meta{font-size:11.5px;color:var(--text-4);flex:0 0 auto;}
+    .node .chev{flex:0 0 auto;color:var(--text-4);}
+    .listing-loading{padding:16px;text-align:center;color:var(--text-3);font-size:12.5px;}
+
+    /* ---------- footer ---------- */
+    footer{border-top:1px solid var(--stroke);background:var(--canvas);padding:12px 16px 16px;}
+    .dest{font-size:12.5px;color:var(--text-2);margin-bottom:10px;min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .dest b{color:var(--brand);font-weight:600;}
+    .dest.empty{color:var(--text-4);}
+    button.file-btn{
+      font-family:var(--sans);font-size:14px;font-weight:600;
+      width:100%;padding:11px;border-radius:var(--radius);border:1px solid transparent;
+      cursor:pointer;transition:background .1s;background:var(--brand-rest);color:#fff;
+    }
+    button.file-btn:hover{background:var(--brand-2);}
+    button.file-btn:disabled{background:var(--layer-3);color:var(--text-4);cursor:not-allowed;}
+
+    .err{color:var(--danger);font-size:12px;margin-top:8px;min-height:14px;}
+
+    /* ---------- success ---------- */
+    .done{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;animation:fade .25s ease;}
+    @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .done .ring{width:56px;height:56px;border-radius:50%;background:var(--brand-rest);display:flex;align-items:center;justify-content:center;color:#fff;margin-bottom:18px;}
+    .done h3{margin:0 0 6px;font-size:16px;font-weight:600;}
+    .done p{color:var(--text-2);font-size:13px;margin:0;}
+    .learn-note{margin-top:16px;font-size:12px;color:var(--text-3);display:flex;align-items:flex-start;gap:7px;max-width:340px;line-height:1.35;text-align:left;}
+    .learn-note svg{width:15px;height:15px;color:var(--brand);flex:0 0 auto;margin-top:1px;}
+    .done .again{margin-top:22px;background:none;border:1px solid var(--stroke);color:var(--text-2);font-family:var(--sans);font-size:13px;font-weight:600;padding:8px 16px;border-radius:var(--radius);cursor:pointer;}
+    .done .again:hover{background:var(--layer-2);}
+    .hidden{display:none !important;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Link to SharePoint
+      </div>
+      <div class="subject" id="subject">—</div>
+
+      <div class="att-wrap" id="attWrap">
+        <div class="att-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg>
+          <span id="attCount">Attachments</span>
+          <button class="multi-toggle" id="multiToggle" title="Select multiple documents">Select multiple</button>
+        </div>
+        <div class="att-list" id="attList"></div>
+
+        <!-- inline rename for a single selected document -->
+        <div class="rename-row hidden" id="renameRow">
+          <span class="rename-label">Save as</span>
+          <input type="text" id="renameInput" spellcheck="false" />
+          <button class="rename-cancel" id="renameCancel" title="Reset name">Reset</button>
+        </div>
+
+        <!-- Save-email-as-.pst option -->
+        <div class="pst-block" id="pstBlock">
+          <label class="pst-toggle" id="pstToggle">
+            <span class="pst-check" id="pstCheck"></span>
+            <span class="pst-text">
+              <span class="pst-title">Save the email itself (.pst)</span>
+              <span class="pst-sub">Archive this message as an Outlook file</span>
+            </span>
+          </label>
+          <div class="pst-scope hidden" id="pstScope">
+            <label class="scope-opt sel" data-scope="thread"><span class="dot"></span>Whole thread (incl. replies)</label>
+            <label class="scope-opt" data-scope="single"><span class="dot"></span>Just this message</label>
+          </div>
+        </div>
+
+        <div class="att-hint" id="attHint"></div>
+      </div>
+    </header>
+
+    <div class="body" id="body">
+      <div class="sec" id="recSec">
+        <h2>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l2.09 6.26L20.5 9.5l-5 3.8L17.5 20 12 16.2 6.5 20l2-6.7-5-3.8 6.41-.24z"/></svg>
+          Recommended location
+        </h2>
+        <span class="sub">ranked by confidence</span>
+      </div>
+      <div class="rec" id="rec">
+        <div class="rec-loading pulse">Analysing document…</div>
+      </div>
+
+      <div class="or">or browse manually</div>
+
+      <div class="crumbs" id="crumbs"></div>
+      <button class="pick-here" id="pickHere">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Save to <span id="pickHereName">this folder</span>
+      </button>
+      <div class="listing" id="listing">
+        <div class="listing-loading pulse">Connecting to SharePoint…</div>
+      </div>
+    </div>
+
+    <footer id="footer">
+      <div class="dest empty" id="dest">No location selected</div>
+      <button class="file-btn" id="fileBtn" disabled>Select a location</button>
+      <div class="err" id="err"></div>
+    </footer>
+  </div>
+
+<script>
+// ============================================================
+// CONFIG — three backend endpoints (Azure Function; see Setup).
+// Leave blank to run in MOCK mode (standalone demo, no auth).
+// ============================================================
+const API = { listChildren:"", recommend:"", recordChoice:"" };
+const AUTH = { clientId:"", tenantId:"", backendScope:"" };
+
+// ============================================================
+// State
+// ============================================================
+const state = {
+  subject:"", messageId:"",
+  attachments:[],           // [{id,name,size,contentType,contentBytes,customName}]
+  selectedAttId:null,       // single-select id
+  selectedIds:[],           // multi-select ids
+  multi:false,              // multi-select mode
+  pst:false,                // save-email-as-.pst on?
+  pstScope:"thread",        // "thread" | "single"
+  cwd:{ driveId:"root", itemId:"root", name:"SharePoint", crumbs:[] },
+  chosen:null, recommendations:[], chosenFromRec:false
+};
+
+// A "mode" derives from the selection. Recommendations show ONLY in single-doc mode.
+function currentMode(){
+  if(state.pst) return "pst";                       // saving the email itself
+  if(state.multi){
+    if(state.selectedIds.length>1) return "multi";
+    if(state.selectedIds.length===1) return "single";
+    return "none";                                  // multi mode, nothing ticked
+  }
+  if(state.attachments.length===0) return "none";   // no files on the email
+  if(state.selectedAttId==null) return "none";      // attachment(s) exist but user deselected
+  return "single";
+}
+function recsAllowed(){ return currentMode()==="single"; }
+
+const $ = id => document.getElementById(id);
+function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function folderIco(){return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';}
+function fileIco(){return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';}
+const chev = '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+
+function attGlyph(name){
+  const ext=(name.split(".").pop()||"").toLowerCase();
+  const map={pptx:["#D24726","PPT"],ppt:["#D24726","PPT"],docx:["#2B579A","DOC"],doc:["#2B579A","DOC"],
+    xlsx:["#217346","XLS"],xls:["#217346","XLS"],pdf:["#B30B00","PDF"],
+    png:["#8661C5","IMG"],jpg:["#8661C5","IMG"],jpeg:["#8661C5","IMG"],gif:["#8661C5","IMG"],
+    zip:["#5E5E5E","ZIP"],txt:["#5E5E5E","TXT"],csv:["#217346","CSV"]};
+  const [color,label]=map[ext]||["#5E5E5E",(ext||"FILE").slice(0,3).toUpperCase()];
+  return `<svg width="28" height="28" viewBox="0 0 28 28"><rect x="3" y="1" width="22" height="26" rx="2.5" fill="${color}"/><text x="14" y="18" font-family="Segoe UI,Arial" font-size="7.5" font-weight="700" fill="#fff" text-anchor="middle">${label}</text></svg>`;
+}
+function humanSize(bytes){
+  if(bytes==null) return "";
+  let n=bytes; for(const u of ["B","KB","MB","GB"]){ if(n<1024) return u==="B"?`${n} ${u}`:`${n.toFixed(n<10?1:0)} ${u}`; n/=1024; }
+  return `${n.toFixed(1)} TB`;
+}
+
+// ---------- Auth (NAA) — live mode only ----------
+const LIVE_MODE = !!(API.listChildren || API.recommend || API.recordChoice);
+let msalInstance=null;
+function naaSupported(){ try{ return typeof Office!=="undefined" && Office.context.requirements.isSetSupported("NestedAppAuth","1.1"); }catch(e){ return false; } }
+async function initMsal(){
+  if(msalInstance) return msalInstance;
+  if(typeof msal==="undefined") throw new Error("msal-browser.min.js didn't load — check lib/ is deployed alongside taskpane.html");
+  msalInstance = await msal.createNestablePublicClientApplication({
+    auth:{ clientId:AUTH.clientId, authority:`https://login.microsoftonline.com/${AUTH.tenantId||"common"}` },
+    cache:{ cacheLocation:"localStorage" }
+  });
+  return msalInstance;
+}
+async function acquireAccessToken(){
+  await initMsal();
+  const req={ scopes:[AUTH.backendScope] };
+  try{ return (await msalInstance.acquireTokenSilent(req)).accessToken; }
+  catch(e){ if(e instanceof msal.InteractionRequiredAuthError) return (await msalInstance.acquireTokenPopup(req)).accessToken; throw e; }
+}
+async function authHeader(){
+  if(!LIVE_MODE) return {};
+  if(!naaSupported()) throw new Error("This Outlook version doesn't support Nested App Authentication — update Outlook.");
+  return { "Authorization":`Bearer ${await acquireAccessToken()}` };
+}
+
+// ============================================================
+// Office bootstrap
+// ============================================================
+function boot(){
+  try{
+    const item=Office.context.mailbox.item;
+    state.subject=item.subject||"(no subject)";
+    state.messageId=item.itemId||"";
+    const atts=(item.attachments||[]).filter(a=>!a.isInline && a.attachmentType!=="item");
+    state.attachments=atts.map(a=>({id:a.id,name:a.name,size:a.size,contentType:a.contentType||"",contentBytes:null}));
+  }catch(e){
+    state.subject="Prototypes P1 and P2 — Resources";
+    state.attachments=[
+      {id:"m1",name:"SharePoint Project - Showcase Prototypes P1, P2.pptx",size:3*1024*1024,contentType:"application/vnd.openxmlformats-officedocument.presentationml.presentation",contentBytes:null},
+      {id:"m2",name:"2026_06_29_CABH_Reference_Guide.pdf",size:722*1024,contentType:"application/pdf",contentBytes:null}
+    ];
+  }
+  $("subject").textContent=state.subject;
+  renderAttachments();
+  wireModeControls();
+  loadRoot();
+  refreshRecommendations();   // shows or hides based on mode
+}
+
+// Show recommendations only in single-document mode; otherwise hide the section.
+function refreshRecommendations(){
+  const secEl=$("recSec"), recEl=$("rec");
+  if(recsAllowed()){
+    secEl.classList.remove("hidden"); recEl.classList.remove("hidden");
+    loadRecommendations();
+  }else{
+    secEl.classList.add("hidden"); recEl.classList.add("hidden");
+    // any rec-based choice is void in non-single modes
+    if(state.chosenFromRec){ state.chosen=null; state.chosenFromRec=false; }
+    reflectChoice();
+  }
+}
+
+function renderAttachments(){
+  const list=$("attList"), n=state.attachments.length;
+  const multi=state.multi;
+
+  if(n===0){
+    $("attCount").textContent="No attachments";
+    $("multiToggle").style.display="none";
+    list.innerHTML="";
+    $("renameRow").classList.add("hidden");
+    $("attHint").textContent="No files to file — you can still save the email below.";
+    return;
+  }
+
+  $("multiToggle").style.display = n>1 ? "" : "none";
+
+  // auto-select the single attachment the first time only (not after a deliberate deselect),
+  // and never when the user is saving the email as .pst
+  if(!multi && !state.pst && !state._touchedSelection && state.selectedAttId==null && n>=1){
+    state.selectedAttId=state.attachments[0].id;
+  }
+
+  $("attCount").textContent = multi
+    ? `${state.selectedIds.length} of ${n} selected`
+    : (n===1
+        ? (state.selectedAttId ? "1 attachment" : "1 attachment — not selected")
+        : (state.selectedAttId ? "1 of "+n+" selected" : `${n} attachments — choose one to file`));
+
+  list.innerHTML=state.attachments.map(a=>{
+    const isSel = multi ? state.selectedIds.includes(a.id) : a.id===state.selectedAttId;
+    const shown = a.customName || a.name;
+    const pencil = (!multi && isSel)
+      ? `<button class="edit-name" data-edit="${esc(a.id)}" title="Rename before filing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>`
+      : "";
+    return `<div class="att ${isSel?'sel':''} ${multi?'multi':''}" data-id="${esc(a.id)}">
+      <span class="ficon">${attGlyph(shown)}</span>
+      <span class="fmeta"><span class="fname">${esc(shown)}</span><span class="fsize">${humanSize(a.size)}</span></span>
+      ${pencil}
+      <span class="radio"></span>
+    </div>`;
+  }).join("");
+
+  // row clicks
+  list.querySelectorAll(".att").forEach(el=>el.addEventListener("click",(ev)=>{
+    if(ev.target.closest(".edit-name")) return; // pencil handled separately
+    const id=el.dataset.id;
+    state._touchedSelection=true;   // user has made a deliberate choice
+    if(multi){
+      if(state.selectedIds.includes(id)) state.selectedIds=state.selectedIds.filter(x=>x!==id);
+      else state.selectedIds.push(id);
+    }else{
+      state.selectedAttId = (state.selectedAttId===id) ? null : id;  // toggle off if same
+      if(state.selectedAttId) ensureContentFor(state.selectedAttId);
+    }
+    onSelectionChanged();
+  }));
+
+  // pencil clicks
+  list.querySelectorAll(".edit-name").forEach(b=>b.addEventListener("click",()=>openRename(b.dataset.edit)));
+
+  // rename row visibility (single mode only, and closed by default)
+  if(multi){ $("renameRow").classList.add("hidden"); }
+  // guidance hint
+  if(!multi && !state.pst && state.selectedAttId==null && n>=1){
+    $("attHint").textContent = "Tip: tap the file to select it, or tick \u201cSave the email itself\u201d below to file just the message.";
+  }else{
+    $("attHint").textContent = "";
+  }
+}
+
+function openRename(id){
+  const a=state.attachments.find(x=>x.id===id); if(!a) return;
+  const row=$("renameRow"), input=$("renameInput");
+  row.classList.remove("hidden");
+  input.value = a.customName || a.name;
+  input.focus(); input.select();
+  input.oninput = ()=>{ a.customName = input.value; };
+  input.onkeydown = (e)=>{ if(e.key==="Enter"){ row.classList.add("hidden"); renderAttachments(); reflectChoice(); } };
+  $("renameCancel").onclick = ()=>{ a.customName=null; input.value=a.name; row.classList.add("hidden"); renderAttachments(); reflectChoice(); };
+}
+
+function onSelectionChanged(){
+  // recompute recommendations visibility + refresh list/labels
+  state.chosen=null; state.chosenFromRec=false;
+  renderAttachments();
+  refreshRecommendations();
+  reflectChoice();
+}
+
+function wireModeControls(){
+  // multi-select toggle
+  const mt=$("multiToggle");
+  mt.addEventListener("click",()=>{
+    state.multi=!state.multi;
+    mt.classList.toggle("on",state.multi);
+    mt.textContent = state.multi ? "Done" : "Select multiple";
+    if(state.multi){
+      // seed multi with current single pick
+      state.selectedIds = state.selectedAttId ? [state.selectedAttId] : [];
+    }else{
+      // collapse back to first selected
+      state.selectedAttId = state.selectedIds[0] || state.attachments[0]?.id || null;
+    }
+    onSelectionChanged();
+  });
+
+  // pst toggle
+  const pb=$("pstBlock");
+  $("pstToggle").addEventListener("click",()=>{
+    state.pst=!state.pst;
+    pb.classList.toggle("on",state.pst);
+    $("pstScope").classList.toggle("hidden",!state.pst);
+    if(state.pst){
+      // saving the email itself — clear any attachment selection
+      state.selectedAttId=null; state.selectedIds=[];
+    }
+    onSelectionChanged();
+  });
+  // pst scope
+  $("pstScope").querySelectorAll(".scope-opt").forEach(o=>o.addEventListener("click",()=>{
+    state.pstScope=o.dataset.scope;
+    $("pstScope").querySelectorAll(".scope-opt").forEach(x=>x.classList.toggle("sel",x===o));
+    reflectChoice();
+  }));
+}
+
+function selectedAttachment(){ return state.attachments.find(a=>a.id===state.selectedAttId)||null; }
+function selectedName(a){ return a ? (a.customName||a.name) : ""; }
+function ensureContentFor(attId){
+  const a=state.attachments.find(x=>x.id===attId);
+  if(!a||a.contentBytes||typeof Office==="undefined") return;
+  try{
+    Office.context.mailbox.item.getAttachmentContentAsync(attId,res=>{
+      if(res.status===Office.AsyncResultStatus.Succeeded && res.value.format===Office.MailboxEnums.AttachmentContentFormat.Base64){
+        a.contentBytes=res.value.content; a.contentType=res.value.contentType||a.contentType||"application/octet-stream";
+      }
+    });
+  }catch(e){}
+}
+
+if(typeof Office!=="undefined"){ Office.onReady(()=>boot()); }
+else { window.addEventListener("DOMContentLoaded", boot); }
+
+// ============================================================
+// SharePoint tree
+// ============================================================
+async function loadRoot(){ state.cwd={driveId:"root",itemId:"root",name:"SharePoint",crumbs:[]}; await listCurrent(); }
+async function listCurrent(){
+  $("listing").innerHTML='<div class="listing-loading pulse">Loading…</div>';
+  renderCrumbs();
+  let items;
+  try{
+    if(API.listChildren){
+      const headers=await authHeader();
+      const u=`${API.listChildren}?driveId=${encodeURIComponent(state.cwd.driveId)}&itemId=${encodeURIComponent(state.cwd.itemId)}`;
+      const r=await fetch(u,{headers}); if(!r.ok) throw new Error("list "+r.status);
+      items=(await r.json()).items;
+    }else{ items=await MOCK.list(state.cwd); }
+  }catch(e){ $("listing").innerHTML=`<div class="listing-loading">Couldn't load this folder. ${esc(e.message)}</div>`; return; }
+  renderListing(items);
+}
+function renderCrumbs(){
+  const c=$("crumbs");
+  const parts=[{name:"SharePoint",driveId:"root",itemId:"root"},...state.cwd.crumbs];
+  c.innerHTML=parts.map((p,i)=>{
+    const last=i===parts.length-1;
+    return `<button class="crumb ${last?'cur':''}" data-i="${i}">${esc(p.name)}</button>`+(last?"":'<span class="crumb-sep">/</span>');
+  }).join("");
+  c.querySelectorAll(".crumb").forEach(b=>b.addEventListener("click",()=>{
+    const i=+b.dataset.i;
+    if(i===0){ loadRoot(); return; }
+    const t=state.cwd.crumbs[i-1];
+    state.cwd={driveId:t.driveId,itemId:t.itemId,name:t.name,crumbs:state.cwd.crumbs.slice(0,i)};
+    listCurrent();
+  }));
+  const ph=$("pickHere");
+  if(state.cwd.crumbs.length===0){ ph.classList.add("hidden"); }
+  else { ph.classList.remove("hidden"); $("pickHereName").textContent=state.cwd.name; }
+}
+function renderListing(items){
+  const el=$("listing");
+  if(!items||!items.length){ el.innerHTML='<div class="listing-loading">Empty folder.</div>'; return; }
+  el.innerHTML=items.map((it,idx)=>{
+    const isF=it.type==="folder";
+    const meta=isF?(it.childCount!=null?`${it.childCount} items`:""):(it.size||"");
+    return `<div class="node ${isF?'folder':'file'}" data-idx="${idx}">
+      <span class="ico">${isF?folderIco():fileIco()}</span>
+      <span class="nm">${esc(it.name)}</span>
+      <span class="meta">${esc(meta)}</span>
+      ${isF?chev:""}
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".node").forEach(n=>{
+    const it=items[+n.dataset.idx];
+    n.addEventListener("click",()=>{
+      if(it.type==="folder"){
+        state.cwd={driveId:it.driveId||state.cwd.driveId,itemId:it.itemId,name:it.name,
+          crumbs:[...state.cwd.crumbs,{name:it.name,driveId:it.driveId||state.cwd.driveId,itemId:it.itemId}]};
+        listCurrent();
+      }
+    });
+  });
+}
+function chooseManualDestination(){
+  const path=["SharePoint",...state.cwd.crumbs.map(c=>c.name)].join(" / ");
+  state.chosen={driveId:state.cwd.driveId,itemId:state.cwd.itemId,name:state.cwd.name,path,site:state.cwd.crumbs[0]?.name||state.cwd.name};
+  state.chosenFromRec=false; reflectChoice();
+}
+
+// ============================================================
+// Recommendations
+// ============================================================
+function docForApi(){ const a=selectedAttachment(); return { name:a?selectedName(a):"", messageId:state.messageId, subject:state.subject }; }
+async function loadRecommendations(){
+  const el=$("rec"); el.innerHTML='<div class="rec-loading pulse">Analysing document…</div>';
+  let recs; const doc=docForApi();
+  try{
+    if(API.recommend){
+      const headers=await authHeader();
+      const r=await fetch(API.recommend,{method:"POST",headers:{...headers,"Content-Type":"application/json"},
+        body:JSON.stringify({document:doc,context:{subject:state.subject}})});
+      if(!r.ok) throw new Error("recommend "+r.status);
+      recs=(await r.json()).recommendations;
+    }else{ await new Promise(r=>setTimeout(r,650)); recs=await MOCK.recommend(doc); }
+  }catch(e){ el.innerHTML=`<div class="rec-empty">No recommendation available — browse below to choose.</div>`; return; }
+  state.recommendations=(recs||[]).slice(0,3); renderRecommendations();
+}
+function renderRecommendations(){
+  const el=$("rec");
+  if(!state.recommendations.length){ el.innerHTML='<div class="rec-empty">No confident match yet — pick a location and it\u2019ll be learned.</div>'; return; }
+  el.innerHTML=state.recommendations.map((r,i)=>{
+    const pct=Math.round(r.confidence*100);
+    const leaf=r.path.split(" / ").slice(-1)[0];
+    const parent=r.path.split(" / ").slice(0,-1).join(" / ");
+    return `<div class="rec-card" data-i="${i}">
+      <div class="rec-top">
+        <span class="rank">#${i+1}</span>
+        <div class="rec-path"><div class="site">${esc(parent)}</div><div class="leaf">${esc(leaf)}</div></div>
+        <div class="conf"><div class="pct">${pct}%</div><div class="lbl">confidence</div></div>
+      </div>
+      <div class="meter"><i style="width:${pct}%"></i></div>
+      <div class="rec-why">${esc(r.reason||"Based on similar documents filed here.")}</div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".rec-card").forEach(card=>card.addEventListener("click",()=>{
+    const r=state.recommendations[+card.dataset.i];
+    state.chosen={driveId:r.driveId,itemId:r.itemId,name:r.path.split(" / ").slice(-1)[0],path:r.path,site:r.site};
+    state.chosenFromRec=true;
+    el.querySelectorAll(".rec-card").forEach(c=>c.classList.remove("chosen"));
+    card.classList.add("chosen");
+    reflectChoice();
+  }));
+}
+
+// ============================================================
+// Submit
+// ============================================================
+function fileTargetLabel(){
+  const mode=currentMode();
+  if(mode==="pst") return state.pstScope==="thread" ? "the whole email thread (.pst)" : "this email (.pst)";
+  if(mode==="multi") return `${state.selectedIds.length} documents`;
+  if(mode==="none") return null;
+  const a=selectedAttachment(); return a ? selectedName(a) : null;
+}
+function reflectChoice(){
+  const d=$("dest"), btn=$("fileBtn");
+  const label=fileTargetLabel();
+  const canPick = !!label; // something to file
+  if(state.chosen && canPick){
+    d.classList.remove("empty");
+    d.innerHTML=`Filing <b>${esc(label)}</b> to ${esc(state.chosen.path)}`;
+    btn.disabled=false; btn.textContent = state.chosenFromRec ? "Accept & file here" : "File here";
+  }else{
+    d.classList.add("empty");
+    d.textContent = canPick ? "No location selected" : "Nothing selected to file";
+    btn.disabled=true; btn.textContent = canPick ? "Select a location" : "Select a file or email";
+  }
+  $("err").textContent="";
+}
+$("fileBtn").addEventListener("click", submit);
+async function submit(){
+  const mode=currentMode();
+  const label=fileTargetLabel();
+  if(!state.chosen || !label) return;
+  const btn=$("fileBtn"); btn.disabled=true; btn.textContent="Filing…";
+
+  // build items being filed depending on mode
+  let items=[];
+  if(mode==="single"){
+    const a=selectedAttachment();
+    items=[{ kind:"file", name:selectedName(a), messageId:state.messageId, subject:state.subject, contentBytes:a?.contentBytes, contentType:a?.contentType }];
+  }else if(mode==="multi"){
+    items=state.selectedIds.map(id=>{ const a=state.attachments.find(x=>x.id===id); return { kind:"file", name:selectedName(a), contentBytes:a?.contentBytes, contentType:a?.contentType }; });
+  }else if(mode==="pst"){
+    items=[{ kind:"email", pstScope:state.pstScope, name:(state.subject||"email")+".pst", messageId:state.messageId, subject:state.subject }];
+  }
+
+  const payload={
+    mode, items,
+    chosen:state.chosen, recommendations:recsAllowed()?state.recommendations:[],
+    acceptedRecommendation:state.chosenFromRec,
+    acceptedRank: state.chosenFromRec ? state.recommendations.findIndex(r=>r.path===state.chosen.path)+1 : null,
+    timestamp:new Date().toISOString()
+  };
+  try{
+    if(API.recordChoice){
+      const headers=await authHeader();
+      const r=await fetch(API.recordChoice,{method:"POST",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error("record "+r.status);
+    }else{
+      await new Promise(r=>setTimeout(r,700));
+      console.log("LEARN + FILE:",{...payload,items:items.map(i=>({...i,contentBytes:i.contentBytes?"[base64]":null}))});
+    }
+    showDone(label, mode);
+  }catch(e){ btn.disabled=false; btn.textContent="File here"; $("err").textContent="Failed: "+e.message+". Try again."; }
+}
+function showDone(label, mode){
+  $("footer").classList.add("hidden");
+  const learn = (mode==="single" && state.chosenFromRec)
+    ? "Recommendation accepted — confidence reinforced for next time."
+    : (mode==="single" ? "New choice recorded — this will improve future recommendations."
+      : "Filed and logged. (Recommendations apply to single documents.)");
+  const remaining = (mode==="single") ? state.attachments.length-1 : 0;
+  $("body").innerHTML=`
+    <div class="done">
+      <div class="ring"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6"/></svg></div>
+      <h3>Filed to SharePoint</h3>
+      <p>${esc(label)}</p>
+      <p style="color:var(--text-3);margin-top:4px;font-size:12px">${esc(state.chosen.path)}</p>
+      <div class="learn-note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg>
+        <span>${learn}</span>
+      </div>
+      ${remaining>0 ? `<button class="again" id="fileAnother">File another attachment (${remaining} left)</button>` : ""}
+    </div>`;
+  const again=$("fileAnother");
+  if(again) again.addEventListener("click",()=>{ location.reload(); });
+}
+
+// ============================================================
+// MOCK backend
+// ============================================================
+const MOCK=(()=>{
+  const tree={
+    "root":[
+      {name:"CABH General",type:"folder",itemId:"f_cabh",childCount:6},
+      {name:"Family",type:"folder",itemId:"f_family",childCount:3},
+      {name:"Corporate",type:"folder",itemId:"f_corp",childCount:5},
+      {name:"HR",type:"folder",itemId:"f_hr",childCount:4},
+      {name:"IT",type:"folder",itemId:"f_it",childCount:2},
+      {name:"Finance",type:"folder",itemId:"f_fin",childCount:5}
+    ],
+    "f_corp":[
+      {name:"TAX",type:"folder",itemId:"f_corp_tax",childCount:4},
+      {name:"LEGAL",type:"folder",itemId:"f_corp_legal",childCount:7},
+      {name:"OVERVIEW",type:"folder",itemId:"f_corp_ov",childCount:2},
+      {name:"PROJECTS",type:"folder",itemId:"f_corp_proj",childCount:2},
+      {name:"Board_minutes_2025.pdf",type:"file",size:"240 KB"}
+    ],
+    "f_corp_tax":[
+      {name:"2024",type:"folder",itemId:"f_tax_24",childCount:12},
+      {name:"2025",type:"folder",itemId:"f_tax_25",childCount:8},
+      {name:"2026",type:"folder",itemId:"f_tax_26",childCount:2},
+      {name:"HMRC_correspondence",type:"folder",itemId:"f_tax_hmrc",childCount:5}
+    ],
+    "f_tax_hmrc":[
+      {name:"Galvan_Ltd",type:"folder",itemId:"f_hmrc_galvan",childCount:3},
+      {name:"BTI_AG",type:"folder",itemId:"f_hmrc_bti",childCount:4}
+    ],
+    "f_corp_proj":[
+      {name:"Archiving_Project",type:"folder",itemId:"f_proj_arch",childCount:4},
+      {name:"Prototypes",type:"folder",itemId:"f_proj_proto",childCount:6}
+    ],
+    "f_fin":[
+      {name:"Statements",type:"folder",itemId:"f_fin_stmt",childCount:20},
+      {name:"Banking",type:"folder",itemId:"f_fin_bank",childCount:6},
+      {name:"Financing_instruments",type:"folder",itemId:"f_fin_fin",childCount:3}
+    ]
+  };
+  return {
+    async list(cwd){ await new Promise(r=>setTimeout(r,280)); return tree[cwd.itemId]||[]; },
+    async recommend(doc){
+      const name=(doc.name||"").toLowerCase();
+      if(name.includes("proto")||name.includes("showcase")||name.includes("ppt")){
+        return [
+          {path:"SharePoint / Corporate / PROJECTS / Prototypes",site:"Corporate",driveId:"root",itemId:"f_proj_proto",confidence:0.91,
+           reason:"Recent prototype and showcase decks were filed here."},
+          {path:"SharePoint / Corporate / PROJECTS / Archiving_Project",site:"Corporate",driveId:"root",itemId:"f_proj_arch",confidence:0.67,
+           reason:"This document references the archiving project."},
+          {path:"SharePoint / CABH General",site:"CABH General",driveId:"root",itemId:"f_cabh",confidence:0.38,
+           reason:"General catch-all; lower match on document type."}
+        ];
+      }
+      return [
+        {path:"SharePoint / Corporate / OVERVIEW",site:"Corporate",driveId:"root",itemId:"f_corp_ov",confidence:0.88,
+         reason:"Reference guides commonly land in the overview library."},
+        {path:"SharePoint / Corporate / PROJECTS / Archiving_Project",site:"Corporate",driveId:"root",itemId:"f_proj_arch",confidence:0.64,
+         reason:"Mentions the archiving project this quarter."},
+        {path:"SharePoint / Finance / Statements",site:"Finance",driveId:"root",itemId:"f_fin_stmt",confidence:0.36,
+         reason:"Lower match on document type."}
+      ];
+    }
+  };
+})();
+
+$("pickHere").addEventListener("click",()=>{
+  chooseManualDestination();
+  document.querySelectorAll(".rec-card.chosen").forEach(c=>c.classList.remove("chosen"));
+});
+</script>
+</body>
+</html>
