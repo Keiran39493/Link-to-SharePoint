@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+
+    "TENANT_ID": "<your-entra-tenant-id>",
+    "BACKEND_CLIENT_ID": "<backend-app-registration-client-id>",
+    "BACKEND_CLIENT_SECRET": "<backend-app-registration-client-secret>",
+    "BACKEND_APP_ID_URI": "api://<backend-app-registration-client-id>",
+
+    "ALLOWED_ORIGIN": "https://localhost:3000",
+    "FILING_TABLE_NAME": "FilingDecisions",
+    "SITE_ALLOWLIST": ""
+  },
+  "Host": {
+    "CORS": ""
+  }
+}

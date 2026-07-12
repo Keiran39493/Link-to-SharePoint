@@ -1,0 +1,5 @@
+azure-functions>=1.21.0
+requests>=2.31.0
+msal>=1.28.0
+PyJWT[crypto]>=2.8.0
+azure-data-tables>=12.5.0
