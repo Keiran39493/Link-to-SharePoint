@@ -24,7 +24,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 logging.warning(">>> FUNCTION_APP LOADED - auth debug logging enabled <<<")
 
-GRAPH_SCOPES = ["https://graph.microsoft.com/Sites.ReadWrite.All"]
+GRAPH_SCOPES = ["https://graph.microsoft.com/Sites.ReadWrite.All", "https://graph.microsoft.com/Mail.Read"]
 
 
 def _cors_headers() -> dict:
@@ -148,25 +148,38 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
             logging.warning("recordChoice upload %r: %s", name, e)
             return _json({"error": f"Upload failed for {name}: {e}"}, 502)
 
-    # Saving the email itself (.pst) is not implemented server-side yet.
-    if emails and not files:
-        return _json(
-            {"error": "Saving the email as .pst is not implemented on the backend yet."}, 501
-        )
+    for it in emails:
+        name = it.get("name") or "email.eml"
+        message_id = it.get("messageId")
+        if not message_id:
+            logging.warning("recordChoice: no messageId for email %r -- skipping upload", name)
+            skipped.append(name)
+            continue
+        try:
+            content = graph_client.get_message_mime(graph_token, message_id)
+            graph_client.upload_file(
+                graph_token, chosen["driveId"], chosen["itemId"], name, content,
+            )
+            uploaded.append(name)
+            logging.info("recordChoice: uploaded email %r (%d bytes)", name, len(content))
+        except graph_client.GraphError as e:
+            logging.warning("recordChoice email upload %r: %s", name, e)
+            return _json({"error": f"Could not save the email as .eml: {e}"}, 502)
 
-    # If we were asked to file documents but uploaded none, that is a failure -- say so.
-    if files and not uploaded:
+    # If we were asked to file something but uploaded nothing, that is a failure -- say so.
+    if (files or emails) and not uploaded:
         return _json(
             {
-                "error": "Could not read the attachment contents, so nothing was uploaded. "
-                         "Reopen the task pane and try again.",
+                "error": "Could not read the attachment or email contents, so nothing was "
+                         "uploaded. Reopen the task pane and try again.",
                 "skipped": skipped,
             },
             400,
         )
 
-    # Log one decision row per uploaded document (the training signal).
-    for it in files:
+    # Log one decision row per uploaded item (the training signal for documents;
+    # emails carry no recommendation, but the row still records where they were filed).
+    for it in files + emails:
         name = it.get("name") or "filed-document"
         if name in skipped:
             continue
@@ -177,6 +190,7 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
             "chosenPath": chosen.get("path"),
             "chosenDriveId": chosen.get("driveId"),
             "chosenItemId": chosen.get("itemId"),
+            "chosenWebUrl": chosen.get("webUrl"),
             "site": chosen.get("site"),
             "recommendations": body.get("recommendations", []),
             "acceptedRecommendation": bool(body.get("acceptedRecommendation")),

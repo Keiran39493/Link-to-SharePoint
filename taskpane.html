@@ -6,6 +6,7 @@
   <title>SharePoint Filing</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="./lib/msal-browser.min.js"></script>
+  <script src="./settings.js"></script>
   <style>
     /* ============================================================
        Outlook-native dark theme. Fluent 2 neutrals + Microsoft blue.
@@ -62,6 +63,7 @@
 
     /* ---------- header ---------- */
     header{
+      position:relative;
       padding:14px 16px 12px;
       border-bottom:1px solid var(--stroke);
       background:var(--canvas);
@@ -79,11 +81,47 @@
     }
     .theme-toggle:hover{background:var(--layer-2);color:var(--brand);}
     .theme-toggle svg{width:17px;height:17px;}
-    /* show moon in dark (click → light); show sun in light (click → dark) */
-    .theme-toggle .ic-sun{display:none;}
-    .theme-toggle .ic-moon{display:block;}
-    body.light .theme-toggle .ic-sun{display:block;}
-    body.light .theme-toggle .ic-moon{display:none;}
+    /* show sun in dark (click → light); show moon in light (click → dark) */
+    .theme-toggle .ic-sun{display:block;}
+    .theme-toggle .ic-moon{display:none;}
+    body.light .theme-toggle .ic-sun{display:none;}
+    body.light .theme-toggle .ic-moon{display:block;}
+    /* history toggle sits just right of the theme toggle */
+    .history-toggle{
+      flex:0 0 auto;width:28px;height:28px;border:none;background:transparent;
+      color:var(--text-3);border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background .1s,color .1s;
+    }
+    .history-toggle:hover{background:var(--layer-2);color:var(--brand);}
+    .history-toggle svg{width:16px;height:16px;}
+    .history-toggle.on{color:var(--brand);background:var(--layer-2);}
+    .history-panel{
+      position:absolute;top:42px;right:16px;width:290px;max-height:320px;overflow-y:auto;
+      background:var(--layer);border:1px solid var(--stroke);border-radius:var(--radius);
+      box-shadow:0 8px 24px rgba(0,0,0,.28);z-index:20;
+    }
+    .history-panel.hidden{display:none;}
+    .history-head{
+      font-size:11px;font-weight:600;letter-spacing:.2px;text-transform:uppercase;
+      color:var(--text-3);padding:10px 12px;border-bottom:1px solid var(--stroke-soft);
+    }
+    .history-item{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--stroke-soft);}
+    .history-item:last-child{border-bottom:none;}
+    .history-item .hi-icon{flex:0 0 auto;width:20px;height:20px;display:flex;align-items:center;justify-content:center;}
+    .history-item .hi-info{flex:1;min-width:0;display:flex;flex-direction:column;}
+    .history-item .hi-name{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .history-item .hi-meta{display:flex;align-items:center;gap:5px;margin-top:1px;}
+    .history-item .hi-path{font-size:11px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .history-item .hi-time{flex:0 0 auto;font-size:10.5px;color:var(--text-4);white-space:nowrap;}
+    .history-item .hi-copy{
+      flex:0 0 auto;width:24px;height:24px;border:none;background:transparent;color:var(--text-4);
+      border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:color .1s,background .1s;
+    }
+    .history-item .hi-copy:hover{background:var(--layer-3);color:var(--brand);}
+    .history-item .hi-copy.copied{color:var(--brand);}
+    .history-item .hi-copy svg{width:14px;height:14px;}
+    .history-empty{padding:14px 12px;text-align:center;font-size:12px;color:var(--text-4);}
     .subject{
       margin-top:9px;font-size:15px;font-weight:600;color:var(--text);
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -115,6 +153,8 @@
     .att.sel .radio{border-color:var(--brand);}
     .att.sel .radio::after{content:"";position:absolute;inset:3.5px;border-radius:50%;background:var(--brand);}
     .att-hint{font-size:11.5px;color:var(--text-4);margin-top:7px;}
+    .ref-guide{font-size:11.5px;margin-top:7px;}
+    .ref-guide a{color:var(--brand);text-decoration:underline;}
 
     /* multi-select toggle */
     .multi-toggle{
@@ -152,26 +192,37 @@
     .att .edit-name:hover{background:var(--layer-3);color:var(--brand);}
     .att .edit-name svg{width:15px;height:15px;}
 
-    /* Save-email-as-.pst */
-    .pst-block{margin-top:10px;border-top:1px solid var(--stroke-soft);padding-top:10px;}
-    .pst-toggle{display:flex;align-items:flex-start;gap:10px;cursor:pointer;}
-    .pst-check{
+    /* Save-email-as-.eml */
+    .eml-block{margin-top:10px;border-top:1px solid var(--stroke-soft);padding-top:10px;}
+    .eml-row{display:flex;align-items:flex-start;gap:8px;}
+    .eml-toggle{display:flex;align-items:flex-start;gap:10px;cursor:pointer;flex:1;min-width:0;}
+    .eml-check{
       width:18px;height:18px;flex:0 0 auto;border-radius:4px;border:1.5px solid var(--text-4);
       position:relative;margin-top:1px;transition:border-color .1s,background .1s;
     }
-    .pst-block.on .pst-check{border-color:var(--brand);background:var(--brand-rest);}
-    .pst-block.on .pst-check::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
-    .pst-title{font-size:13px;font-weight:600;color:var(--text);display:block;}
-    .pst-sub{font-size:11.5px;color:var(--text-3);display:block;margin-top:1px;}
-    .pst-scope{display:flex;flex-direction:column;gap:6px;margin-top:9px;margin-left:28px;}
-    .pst-scope.hidden{display:none;}
-    .scope-opt{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);cursor:pointer;}
-    .scope-opt .dot{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--text-4);position:relative;flex:0 0 auto;}
-    .scope-opt.sel .dot{border-color:var(--brand);}
-    .scope-opt.sel .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--brand);}
+    .eml-block.on .eml-check{border-color:var(--brand);background:var(--brand-rest);}
+    .eml-block.on .eml-check::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
+    .eml-title{font-size:13px;font-weight:600;color:var(--text);display:block;}
+    .eml-sub{font-size:11.5px;color:var(--text-3);display:block;margin-top:1px;}
+    .eml-filename{font-size:11.5px;color:var(--text);font-weight:600;margin-top:3px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .eml-filename.hidden{display:none;}
+    .eml-edit{
+      flex:0 0 auto;width:26px;height:26px;border-radius:4px;border:none;background:transparent;
+      color:var(--text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;
+    }
+    .eml-edit.hidden{display:none;}
+    .eml-edit:hover{background:var(--layer-3);color:var(--brand);}
+    .eml-edit svg{width:15px;height:15px;}
 
     /* ---------- scroll body ---------- */
     .body{flex:1 1 auto;overflow-y:auto;padding:14px 16px 8px;}
+
+    /* ---------- CAB heading (under the brand row) ---------- */
+    .cab-heading{
+      font-family:'Aptos','Aptos Body',var(--sans);
+      font-size:28px;font-weight:700;color:var(--text);
+      text-align:center;margin:10px 0 0;
+    }
 
     /* ---------- section label ---------- */
     .sec{display:flex;align-items:center;justify-content:space-between;margin:2px 0 9px;}
@@ -347,7 +398,15 @@
           <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1.5 12h2M20.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
         </button>
+        <button class="history-toggle" id="historyToggle" title="Filing history (last 30 days)" aria-label="Show filing history from the last 30 days" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+        </button>
       </div>
+      <div class="history-panel hidden" id="historyPanel">
+        <div class="history-head">Filed in the last 30 days</div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+      <div class="cab-heading">C A B</div>
       <div class="subject" id="subject">—</div>
 
       <div class="att-wrap" id="attWrap">
@@ -365,22 +424,25 @@
           <button class="rename-cancel" id="renameCancel" title="Reset name">Reset</button>
         </div>
 
-        <!-- Save-email-as-.pst option -->
-        <div class="pst-block" id="pstBlock">
-          <label class="pst-toggle" id="pstToggle">
-            <span class="pst-check" id="pstCheck"></span>
-            <span class="pst-text">
-              <span class="pst-title">Save the email itself (.pst)</span>
-              <span class="pst-sub">Archive this message as an Outlook file</span>
-            </span>
-          </label>
-          <div class="pst-scope hidden" id="pstScope">
-            <label class="scope-opt sel" data-scope="thread"><span class="dot"></span>Whole thread (incl. replies)</label>
-            <label class="scope-opt" data-scope="single"><span class="dot"></span>Just this message</label>
+        <!-- Save-email-as-.eml option -->
+        <div class="eml-block" id="emlBlock">
+          <div class="eml-row">
+            <label class="eml-toggle" id="emlToggle">
+              <span class="eml-check" id="emlCheck"></span>
+              <span class="eml-text">
+                <span class="eml-title">Save the email itself (.eml)</span>
+                <span class="eml-sub">Saves this message, including the latest conversation, as a single file</span>
+                <span class="eml-filename hidden" id="emlFilename"></span>
+              </span>
+            </label>
+            <button class="eml-edit hidden" id="emlEdit" type="button" title="Rename before filing">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            </button>
           </div>
         </div>
 
         <div class="att-hint" id="attHint"></div>
+        <div class="ref-guide" id="refGuide"></div>
       </div>
     </header>
 
@@ -433,15 +495,16 @@
 // Leave blank to run in MOCK mode (standalone demo, no auth).
 // ============================================================
 const API = {
-  listChildren: "http://localhost:7071/api/sp/list",
-  recommend:    "http://localhost:7071/api/sp/recommend",
-  recordChoice: "http://localhost:7071/api/sp/file"
+  listChildren: "https://func-sp-linking-001.azurewebsites.net/api/sp/list",
+  recommend:    "https://func-sp-linking-001.azurewebsites.net/api/sp/recommend",
+  recordChoice: "https://func-sp-linking-001.azurewebsites.net/api/sp/file"
 };
 const AUTH = {
   clientId:     "2b675fa6-f407-4346-9533-1374d9622959",
   tenantId:     "44ea516d-5c3b-40e9-909a-f11e5fb0f57f",
   backendScope: "api://93007d4b-c870-49f7-ad75-21ad4705cb0e/access_as_user"
 };
+const REF_GUIDE_URL = "https://bentelertrading.sharepoint.com/:b:/r/sites/CABHolding135/Freigegebene%20Dokumente/General/8%20Templates%20and%20forms/26_06_22_CABH_Referencing_Guide.pdf?csf=1&web=1&e=zuFzIJ";
 // ============================================================
 // State
 // ============================================================
@@ -451,16 +514,17 @@ const state = {
   selectedAttId:null,       // single-select id
   selectedIds:[],           // multi-select ids
   multi:false,              // multi-select mode
-  pst:false,                // save-email-as-.pst on?
-  pstScope:"thread",        // "thread" | "single"
+  eml:false,                // save-email-as-.eml on?
+  emlCustomName:null,       // user-chosen name for the .eml, overrides the subject-based default
   cwd:{ driveId:"root", itemId:"root", name:"SharePoint", crumbs:[] },
   chosen:null, recommendations:[], chosenFromRec:false,
-  favourites:[], favOpen:false   // up to 5 favourite paths; in-memory for the mock
+  favourites:[], favOpen:false,  // up to 5 favourite paths; in-memory for the mock
+  historyOpen:false
 };
 
 // A "mode" derives from the selection. Recommendations show ONLY in single-doc mode.
 function currentMode(){
-  if(state.pst) return "pst";                       // saving the email itself
+  if(state.eml) return "eml";                       // saving the email itself
   if(state.multi){
     if(state.selectedIds.length>1) return "multi";
     if(state.selectedIds.length===1) return "single";
@@ -475,17 +539,16 @@ function recsAllowed(){ return currentMode()==="single"; }
 const $ = id => document.getElementById(id);
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function folderIco(){return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';}
-function fileIco(){return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';}
 const chev = '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
 
-function attGlyph(name){
+function attGlyph(name,size=28){
   const ext=(name.split(".").pop()||"").toLowerCase();
   const map={pptx:["#D24726","PPT"],ppt:["#D24726","PPT"],docx:["#2B579A","DOC"],doc:["#2B579A","DOC"],
     xlsx:["#217346","XLS"],xls:["#217346","XLS"],pdf:["#B30B00","PDF"],
     png:["#8661C5","IMG"],jpg:["#8661C5","IMG"],jpeg:["#8661C5","IMG"],gif:["#8661C5","IMG"],
-    zip:["#5E5E5E","ZIP"],txt:["#5E5E5E","TXT"],csv:["#217346","CSV"]};
+    zip:["#5E5E5E","ZIP"],txt:["#5E5E5E","TXT"],csv:["#217346","CSV"],eml:["#0F6CBD","EML"],msg:["#0F6CBD","MSG"]};
   const [color,label]=map[ext]||["#5E5E5E",(ext||"FILE").slice(0,3).toUpperCase()];
-  return `<svg width="28" height="28" viewBox="0 0 28 28"><rect x="3" y="1" width="22" height="26" rx="2.5" fill="${color}"/><text x="14" y="18" font-family="Segoe UI,Arial" font-size="7.5" font-weight="700" fill="#fff" text-anchor="middle">${label}</text></svg>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 28 28"><rect x="3" y="1" width="22" height="26" rx="2.5" fill="${color}"/><text x="14" y="18" font-family="Segoe UI,Arial" font-size="7.5" font-weight="700" fill="#fff" text-anchor="middle">${label}</text></svg>`;
 }
 function humanSize(bytes){
   if(bytes==null) return "";
@@ -526,6 +589,14 @@ function boot(){
     const item=Office.context.mailbox.item;
     state.subject=item.subject||"(no subject)";
     state.messageId=item.itemId||"";
+    // Graph (used server-side to fetch the .eml MIME content) needs the REST/Graph-
+    // compatible id, not the EWS-format id.itemId — convert if the host supports it,
+    // but don't let a conversion hiccup take down the rest of boot().
+    try{
+      if(state.messageId && Office.context.mailbox.convertToRestId){
+        state.messageId=Office.context.mailbox.convertToRestId(state.messageId, Office.MailboxEnums.RestVersion.v2_0);
+      }
+    }catch(e){ console.warn("convertToRestId failed, falling back to raw itemId:", e); }
     const atts=(item.attachments||[]).filter(a=>!a.isInline && a.attachmentType!=="item");
     state.attachments=atts.map(a=>({id:a.id,name:a.name,size:a.size,contentType:a.contentType||"",contentBytes:null}));
   }catch(e){
@@ -537,9 +608,11 @@ function boot(){
   }
   $("subject").textContent=state.subject;
   renderAttachments();
+  renderEmlBlock();
   wireModeControls();
   renderFavourites();
   syncFavOpen();
+  syncHistoryOpen();
   loadRoot();
   refreshRecommendations();   // shows or hides based on mode
 }
@@ -568,14 +641,17 @@ function renderAttachments(){
     list.innerHTML="";
     $("renameRow").classList.add("hidden");
     $("attHint").textContent="No files to file — you can still save the email below.";
+    $("refGuide").innerHTML="";
     return;
   }
+
+  $("refGuide").innerHTML=`<a href="${REF_GUIDE_URL}" target="_blank" rel="noopener noreferrer">See our naming referencing guide.</a>`;
 
   $("multiToggle").style.display = n>1 ? "" : "none";
 
   // auto-select the single attachment the first time only (not after a deliberate deselect),
-  // and never when the user is saving the email as .pst
-  if(!multi && !state.pst && !state._touchedSelection && state.selectedAttId==null && n>=1){
+  // and never when the user is saving the email as .eml
+  if(!multi && !state.eml && !state._touchedSelection && state.selectedAttId==null && n>=1){
     state.selectedAttId=state.attachments[0].id;
   }
 
@@ -620,7 +696,7 @@ function renderAttachments(){
   // rename row visibility (single mode only, and closed by default)
   if(multi){ $("renameRow").classList.add("hidden"); }
   // guidance hint
-  if(!multi && !state.pst && state.selectedAttId==null && n>=1){
+  if(!multi && !state.eml && state.selectedAttId==null && n>=1){
     $("attHint").textContent = "Tip: tap the file to select it, or tick \u201cSave the email itself\u201d below to file just the message.";
   }else{
     $("attHint").textContent = "";
@@ -628,14 +704,30 @@ function renderAttachments(){
 }
 
 function openRename(id){
-  const a=state.attachments.find(x=>x.id===id); if(!a) return;
+  const isEml = id==="__eml__";
+  const a = isEml ? null : state.attachments.find(x=>x.id===id);
+  if(!isEml && !a) return;
   const row=$("renameRow"), input=$("renameInput");
   row.classList.remove("hidden");
-  input.value = a.customName || a.name;
+  input.value = isEml ? emlName() : (a.customName || a.name);
   input.focus(); input.select();
-  input.oninput = ()=>{ a.customName = input.value; };
-  input.onkeydown = (e)=>{ if(e.key==="Enter"){ row.classList.add("hidden"); renderAttachments(); reflectChoice(); } };
-  $("renameCancel").onclick = ()=>{ a.customName=null; input.value=a.name; row.classList.add("hidden"); renderAttachments(); reflectChoice(); };
+  input.oninput = ()=>{ if(isEml) state.emlCustomName=input.value; else a.customName=input.value; renderEmlBlock(); };
+  input.onkeydown = (e)=>{ if(e.key==="Enter"){ row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice(); } };
+  $("renameCancel").onclick = ()=>{
+    if(isEml){ state.emlCustomName=null; input.value=emlDefaultName(); }
+    else { a.customName=null; input.value=a.name; }
+    row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice();
+  };
+}
+
+function emlDefaultName(){ return (state.subject||"email")+".eml"; }
+function emlName(){ return state.emlCustomName || emlDefaultName(); }
+function renderEmlBlock(){
+  const on=state.eml;
+  $("emlEdit").classList.toggle("hidden", !on);
+  const fn=$("emlFilename");
+  if(on){ fn.textContent = `Will be saved as "${emlName()}"`; fn.classList.remove("hidden"); }
+  else{ fn.classList.add("hidden"); }
 }
 
 function onSelectionChanged(){
@@ -663,24 +755,22 @@ function wireModeControls(){
     onSelectionChanged();
   });
 
-  // pst toggle
-  const pb=$("pstBlock");
-  $("pstToggle").addEventListener("click",()=>{
-    state.pst=!state.pst;
-    pb.classList.toggle("on",state.pst);
-    $("pstScope").classList.toggle("hidden",!state.pst);
-    if(state.pst){
+  // eml toggle
+  const eb=$("emlBlock");
+  $("emlToggle").addEventListener("click",()=>{
+    state.eml=!state.eml;
+    eb.classList.toggle("on",state.eml);
+    if(state.eml){
       // saving the email itself — clear any attachment selection
       state.selectedAttId=null; state.selectedIds=[];
     }
+    $("renameRow").classList.add("hidden");
+    renderEmlBlock();
     onSelectionChanged();
   });
-  // pst scope
-  $("pstScope").querySelectorAll(".scope-opt").forEach(o=>o.addEventListener("click",()=>{
-    state.pstScope=o.dataset.scope;
-    $("pstScope").querySelectorAll(".scope-opt").forEach(x=>x.classList.toggle("sel",x===o));
-    reflectChoice();
-  }));
+
+  // eml rename pencil
+  $("emlEdit").addEventListener("click",(ev)=>{ ev.preventDefault(); ev.stopPropagation(); openRename("__eml__"); });
 }
 
 function selectedAttachment(){ return state.attachments.find(a=>a.id===state.selectedAttId)||null; }
@@ -716,8 +806,44 @@ function ensureContentFor(attId){
   return a._pending;
 }
 
-if(typeof Office!=="undefined"){ Office.onReady(()=>boot()); }
-else { window.addEventListener("DOMContentLoaded", boot); }
+// ============================================================
+// Host detection — friendly screen when opened outside Outlook.
+// This is presentation only, NOT a security control: the real
+// protection is the backend rejecting any request without a valid
+// tenant token. It only triggers when there's no Office host,
+// so it never interferes with the in-Outlook NAA sign-in.
+// ============================================================
+function showOutsideOutlookScreen(){
+  document.body.classList.remove("light"); // this screen is always dark
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+                background:#1B1A19;color:#fff;font-family:'Segoe UI',system-ui,sans-serif;padding:24px;">
+      <div style="max-width:340px;text-align:center;">
+        <div style="width:72px;height:72px;margin:0 auto 20px;border-radius:16px;
+                    background:#0F6CBD;display:flex;align-items:center;justify-content:center;">
+          <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="#fff"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </div>
+        <h1 style="font-size:20px;font-weight:600;margin:0 0 10px;">Link to SharePoint</h1>
+        <p style="font-size:14px;line-height:1.5;color:#A19F9D;margin:0;">
+          This tool runs inside Outlook. Open it from an email to sign in and file your documents.
+        </p>
+      </div>
+    </div>`;
+}
+
+if(typeof Office!=="undefined"){
+  // Inside Outlook: Office.onReady resolves with a host; boot the app.
+  Office.onReady(info=>{
+    if(info && info.host){ boot(); }
+    else { showOutsideOutlookScreen(); }   // office.js loaded but not a real host
+  });
+}else{
+  // No Office at all -> opened directly in a browser.
+  window.addEventListener("DOMContentLoaded", showOutsideOutlookScreen);
+}
 
 // ============================================================
 // SharePoint tree
@@ -767,7 +893,7 @@ function renderListing(items){
            <svg viewBox="0 0 24 24" ${fav?'fill="currentColor"':'fill="none" stroke="currentColor" stroke-width="2"'}><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.2l1-5.8L3.5 9.2l5.9-.9z"/></svg>
          </button>` : "";
     return `<div class="node ${isF?'folder':'file'}" data-idx="${idx}">
-      <span class="ico">${isF?folderIco():fileIco()}</span>
+      <span class="ico">${isF?folderIco():attGlyph(it.name,20)}</span>
       <span class="nm">${esc(it.name)}</span>
       <span class="meta">${esc(meta)}</span>
       ${star}
@@ -875,6 +1001,79 @@ function flashFavLimit(){
 }
 
 // ============================================================
+// Filing history (last 30 days) — see settings.js for storage
+// ============================================================
+function relTime(ts){
+  const diffMs=Date.now()-new Date(ts).getTime();
+  const min=Math.floor(diffMs/60000);
+  if(min<1) return "Just now";
+  if(min<60) return `${min}m ago`;
+  const hr=Math.floor(min/60);
+  if(hr<24) return `${hr}h ago`;
+  const day=Math.floor(hr/24);
+  if(day<30) return `${day}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+function renderHistoryPanel(){
+  const entries=loadHistoryEntries();
+  const el=$("historyList");
+  if(!entries.length){
+    el.innerHTML='<div class="history-empty">No files filed in the last 30 days.</div>';
+    return;
+  }
+  el.innerHTML=entries.map((e,i)=>`
+    <div class="history-item">
+      <span class="hi-icon">${attGlyph(e.name||"",20)}</span>
+      <span class="hi-info">
+        <span class="hi-name">${esc(e.name||"")}</span>
+        <span class="hi-meta"><span class="hi-path">${esc(e.path||"")}</span></span>
+      </span>
+      <span class="hi-time">${esc(relTime(e.timestamp))}</span>
+      <button class="hi-copy" data-i="${i}" title="Copy path">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>`).join("");
+  el.querySelectorAll(".hi-copy").forEach(b=>b.addEventListener("click",(ev)=>{
+    ev.stopPropagation();
+    copyHistoryPath(entries[+b.dataset.i].path||"", b);
+  }));
+}
+function copyHistoryPath(path, btn){
+  let done=false;
+  const finish=()=>{ if(done) return; done=true; flashCopied(btn); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(path).then(finish).catch(()=>fallbackCopy(path,finish));
+    // Some hosts leave this promise pending indefinitely (permission prompt that
+    // never resolves) -- fall back rather than leaving the button with no feedback.
+    setTimeout(()=>{ if(!done) fallbackCopy(path,finish); }, 400);
+  }else{
+    fallbackCopy(path,finish);
+  }
+}
+function fallbackCopy(text,done){
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    done();
+  }catch(e){}
+}
+function flashCopied(btn){
+  const original=btn.innerHTML;
+  btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6"/></svg>';
+  btn.classList.add("copied");
+  btn.title="Copied!";
+  setTimeout(()=>{ btn.innerHTML=original; btn.classList.remove("copied"); btn.title="Copy path"; }, 1200);
+}
+function syncHistoryOpen(){
+  $("historyPanel").classList.toggle("hidden",!state.historyOpen);
+  $("historyToggle").classList.toggle("on",state.historyOpen);
+  $("historyToggle").setAttribute("aria-expanded", state.historyOpen?"true":"false");
+}
+
+// ============================================================
 // Recommendations
 // ============================================================
 function docForApi(){ const a=selectedAttachment(); return { name:a?selectedName(a):"", messageId:state.messageId, subject:state.subject }; }
@@ -924,7 +1123,7 @@ function renderRecommendations(){
 // ============================================================
 function fileTargetLabel(){
   const mode=currentMode();
-  if(mode==="pst") return state.pstScope==="thread" ? "the whole email thread (.pst)" : "this email (.pst)";
+  if(mode==="eml") return emlName();
   if(mode==="multi") return `${state.selectedIds.length} documents`;
   if(mode==="none") return null;
   const a=selectedAttachment(); return a ? selectedName(a) : null;
@@ -972,8 +1171,8 @@ async function submit(){
     items=[{ kind:"file", name:selectedName(a), messageId:state.messageId, subject:state.subject, contentBytes:a?.contentBytes, contentType:a?.contentType }];
   }else if(mode==="multi"){
     items=state.selectedIds.map(id=>{ const a=state.attachments.find(x=>x.id===id); return { kind:"file", name:selectedName(a), contentBytes:a?.contentBytes, contentType:a?.contentType }; });
-  }else if(mode==="pst"){
-    items=[{ kind:"email", pstScope:state.pstScope, name:(state.subject||"email")+".pst", messageId:state.messageId, subject:state.subject }];
+  }else if(mode==="eml"){
+    items=[{ kind:"email", name:emlName(), messageId:state.messageId, subject:state.subject }];
   }
 
   const payload={
@@ -984,6 +1183,7 @@ async function submit(){
     timestamp:new Date().toISOString()
   };
   try{
+    let skippedNames=[];
     if(API.recordChoice){
       const headers=await authHeader();
       const r=await fetch(API.recordChoice,{method:"POST",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -996,11 +1196,17 @@ async function submit(){
       const result = await r.json();
       if(result && Array.isArray(result.skipped) && result.skipped.length){
         console.warn("Some files were skipped:", result.skipped);
+        skippedNames=result.skipped;
       }
     }else{
       await new Promise(r=>setTimeout(r,700));
       console.log("LEARN + FILE:",{...payload,items:items.map(i=>({...i,contentBytes:i.contentBytes?"[base64]":null}))});
     }
+    // Record one history entry per item that actually landed (not ones the backend skipped).
+    const filedAt=new Date().toISOString();
+    items.filter(it=>!skippedNames.includes(it.name)).forEach(it=>{
+      addHistoryEntry({name:it.name, path:state.chosen.path, timestamp:filedAt});
+    });
     showDone(label, mode);
   }catch(e){ btn.disabled=false; btn.textContent="File here"; $("err").textContent="Failed: "+e.message+". Try again."; }
 }
@@ -1104,26 +1310,30 @@ $("favHead").addEventListener("click",()=>{
   syncFavOpen();
 });
 
+// history panel open/close
+$("historyToggle").addEventListener("click",()=>{
+  state.historyOpen=!state.historyOpen;
+  if(state.historyOpen) renderHistoryPanel();
+  syncHistoryOpen();
+});
+
 // ============================================================
 // Theme toggle (light / dark)
-// Mock: in-memory only (resets on reload).
-// LIVE: persist via Office RoamingSettings (per-user, all devices) or
-//       localStorage on the real HTTPS host. Example for live:
-//   const rs = Office.context.roamingSettings;
-//   rs.set("theme", theme); rs.saveAsync();
-//   ...and on boot: const saved = rs.get("theme");
+// Persisted via Office RoamingSettings (per-user, all devices) with a
+// localStorage fallback — see settings.js for loadAppSetting/saveAppSetting.
 // ============================================================
-let _theme = "dark"; // default: dark (current look)
+let _theme = loadAppSetting(APP_SETTINGS_KEYS.theme, "dark"); // default: dark (current look)
 function applyTheme(t){
   _theme = t;
   document.body.classList.toggle("light", t==="light");
   const btn=$("themeToggle");
   if(btn) btn.title = t==="light" ? "Switch to dark theme" : "Switch to light theme";
+  saveAppSetting(APP_SETTINGS_KEYS.theme, t);
 }
 $("themeToggle").addEventListener("click",()=>{
   applyTheme(_theme==="dark" ? "light" : "dark");
 });
-applyTheme("dark");
+applyTheme(_theme);
 </script>
 </body>
 </html>

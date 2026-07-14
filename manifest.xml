@@ -21,9 +21,9 @@
     (Azure Static Web Apps, Storage static website, etc. — see Setup). Not the Azure
     Function's URL — that's configured separately inside taskpane.html's API object.
   -->
-  <IconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-128.png"/>
-  <SupportUrl DefaultValue="https://localhost:3000/support"/>
+  <IconUrl DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/assets/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/assets/icon-128.png"/>
+  <SupportUrl DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/taskpane.html"/>
 
   <Hosts>
     <Host Name="Mailbox"/>
@@ -37,7 +37,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+        <SourceLocation DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/taskpane.html"/>
         <RequestedHeight>450</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -89,13 +89,13 @@
       <!-- Same HTTPS host as above. Any 16/32/80px PNG works for sideload testing;
            replace with real branded icons before an org-wide rollout. -->
       <bt:Images>
-        <bt:Image id="icon16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
-        <bt:Image id="icon32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-        <bt:Image id="icon80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="icon16" DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/assets/icon-16.png"/>
+        <bt:Image id="icon32" DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/assets/icon-32.png"/>
+        <bt:Image id="icon80" DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="taskpaneUrl" DefaultValue="https://localhost:3000/taskpane.html"/>
-        <bt:Url id="functionFile" DefaultValue="https://localhost:3000/taskpane.html"/>
+        <bt:Url id="taskpaneUrl" DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/taskpane.html"/>
+        <bt:Url id="functionFile" DefaultValue="https://stsplinkfiling001.z1.web.core.windows.net/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="groupLabel" DefaultValue="SharePoint"/>

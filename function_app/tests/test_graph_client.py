@@ -18,13 +18,17 @@ def test_root_lists_sites(monkeypatch):
 
     def fake_get(token, url):
         calls.append(url)
-        return {"value": [{"id": "siteA", "displayName": "Corporate"}]}
+        return {"value": [{"id": "siteA", "displayName": "Corporate", "webUrl": "https://contoso.sharepoint.com/sites/Corporate"}]}
 
     monkeypatch.setattr(graph_client, "_get", fake_get)
     items = graph_client.list_children("tok", "root", "root")
 
     assert "followedSites" in calls[0]
-    assert items == [{"name": "Corporate", "type": "folder", "driveId": "site:siteA", "itemId": "drives"}]
+    assert "webUrl" in calls[0]
+    assert items == [{
+        "name": "Corporate", "type": "folder", "driveId": "site:siteA", "itemId": "drives",
+        "webUrl": "https://contoso.sharepoint.com/sites/Corporate",
+    }]
 
 
 def test_root_uses_site_allowlist_when_set(monkeypatch):
@@ -49,13 +53,16 @@ def test_site_pseudo_level_lists_drives(monkeypatch):
 
     def fake_get(token, url):
         calls.append(url)
-        return {"value": [{"id": "b!driveXYZ", "name": "Documents"}]}
+        return {"value": [{"id": "b!driveXYZ", "name": "Documents", "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents"}]}
 
     monkeypatch.setattr(graph_client, "_get", fake_get)
     items = graph_client.list_children("tok", "site:siteA", "drives")
 
-    assert calls[0] == f"{graph_client.GRAPH}/sites/siteA/drives?$select=id,name"
-    assert items == [{"name": "Documents", "type": "folder", "driveId": "b!driveXYZ", "itemId": "root"}]
+    assert calls[0] == f"{graph_client.GRAPH}/sites/siteA/drives?$select=id,name,webUrl"
+    assert items == [{
+        "name": "Documents", "type": "folder", "driveId": "b!driveXYZ", "itemId": "root",
+        "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents",
+    }]
 
 
 def test_drive_root_lists_children(monkeypatch):
@@ -64,16 +71,22 @@ def test_drive_root_lists_children(monkeypatch):
     def fake_get(token, url):
         calls.append(url)
         return {"value": [
-            {"name": "TAX", "folder": {"childCount": 4}, "id": "folder1"},
-            {"name": "notes.txt", "size": 512},
+            {"name": "TAX", "folder": {"childCount": 4}, "id": "folder1", "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents/TAX"},
+            {"name": "notes.txt", "size": 512, "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents/notes.txt"},
         ]}
 
     monkeypatch.setattr(graph_client, "_get", fake_get)
     items = graph_client.list_children("tok", "b!driveXYZ", "root")
 
     assert calls[0] == f"{graph_client.GRAPH}/drives/b!driveXYZ/root/children"
-    assert items[0] == {"name": "TAX", "type": "folder", "itemId": "folder1", "childCount": 4}
-    assert items[1] == {"name": "notes.txt", "type": "file", "size": "512 B"}
+    assert items[0] == {
+        "name": "TAX", "type": "folder", "itemId": "folder1", "childCount": 4,
+        "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents/TAX",
+    }
+    assert items[1] == {
+        "name": "notes.txt", "type": "file", "size": "512 B",
+        "webUrl": "https://contoso.sharepoint.com/sites/Corporate/Documents/notes.txt",
+    }
 
 
 def test_drive_subfolder_lists_children_by_item_id(monkeypatch):
@@ -95,3 +108,37 @@ def test_upload_rejects_oversized_content():
         assert False, "expected GraphError"
     except graph_client.GraphError as e:
         assert "simple-upload" in str(e)
+
+
+def test_get_message_mime_returns_raw_bytes(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        content = b"From: a@b.com\r\nSubject: Hi\r\n\r\nBody"
+
+    def fake_get(url, headers=None, timeout=None):
+        calls.append((url, headers))
+        return FakeResponse()
+
+    monkeypatch.setattr(graph_client.requests, "get", fake_get)
+    content = graph_client.get_message_mime("tok", "AAMkAGI+id/with=chars")
+
+    assert content == b"From: a@b.com\r\nSubject: Hi\r\n\r\nBody"
+    assert calls[0][0] == f"{graph_client.GRAPH}/me/messages/AAMkAGI%2Bid%2Fwith%3Dchars/$value"
+    assert calls[0][1]["Authorization"] == "Bearer tok"
+
+
+def test_get_message_mime_raises_on_error(monkeypatch):
+    class FakeResponse:
+        ok = False
+        status_code = 404
+        text = "not found"
+
+    monkeypatch.setattr(graph_client.requests, "get", lambda url, headers=None, timeout=None: FakeResponse())
+
+    try:
+        graph_client.get_message_mime("tok", "missing-id")
+        assert False, "expected GraphError"
+    except graph_client.GraphError as e:
+        assert "404" in str(e)

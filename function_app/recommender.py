@@ -53,7 +53,7 @@ def recommend(document: dict[str, Any], history: list[dict[str, Any]], top_n: in
         return []
 
     groups: dict[tuple[Any, Any, Any], dict[str, Any]] = defaultdict(
-        lambda: {"count": 0, "best_sim": 0.0, "sim_sum": 0.0, "site": None}
+        lambda: {"count": 0, "best_sim": 0.0, "sim_sum": 0.0, "site": None, "webUrl": None}
     )
     for row in history:
         path = row.get("chosenPath")
@@ -68,6 +68,7 @@ def recommend(document: dict[str, Any], history: list[dict[str, Any]], top_n: in
         g["sim_sum"] += sim
         g["best_sim"] = max(g["best_sim"], sim)
         g["site"] = row.get("site")
+        g["webUrl"] = row.get("chosenWebUrl")
 
     scored = []
     for (path, drive_id, item_id), g in groups.items():

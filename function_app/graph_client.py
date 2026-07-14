@@ -60,24 +60,25 @@ def _list_sites(token: str) -> list[dict]:
     rely on people following sites."""
     allowlist = [s.strip() for s in os.environ.get("SITE_ALLOWLIST", "").split(",") if s.strip()]
     if allowlist:
-        sites = [_get(token, f"{GRAPH}/sites/{site_id}?$select=id,displayName") for site_id in allowlist]
+        sites = [_get(token, f"{GRAPH}/sites/{site_id}?$select=id,displayName,webUrl") for site_id in allowlist]
     else:
-        sites = _get(token, f"{GRAPH}/me/followedSites?$select=id,displayName").get("value", [])
+        sites = _get(token, f"{GRAPH}/me/followedSites?$select=id,displayName,webUrl").get("value", [])
     return [
         {
             "name": s.get("displayName") or s.get("name") or "Untitled site",
             "type": "folder",
             "driveId": f"site:{s['id']}",
             "itemId": "drives",
+            "webUrl": s.get("webUrl"),
         }
         for s in sites
     ]
 
 
 def _list_drives(token: str, site_id: str) -> list[dict]:
-    data = _get(token, f"{GRAPH}/sites/{site_id}/drives?$select=id,name")
+    data = _get(token, f"{GRAPH}/sites/{site_id}/drives?$select=id,name,webUrl")
     return [
-        {"name": d.get("name") or "Documents", "type": "folder", "driveId": d["id"], "itemId": "root"}
+        {"name": d.get("name") or "Documents", "type": "folder", "driveId": d["id"], "itemId": "root", "webUrl": d.get("webUrl")}
         for d in data.get("value", [])
     ]
 
@@ -89,12 +90,14 @@ def _shape_item(item: dict) -> dict:
             "type": "folder",
             "itemId": item["id"],
             "childCount": item["folder"].get("childCount"),
+            "webUrl": item.get("webUrl"),
         }
     size = item.get("size")
     return {
         "name": item["name"],
         "type": "file",
         "size": _human_size(size) if size is not None else None,
+        "webUrl": item.get("webUrl"),
     }
 
 
@@ -104,6 +107,17 @@ def _human_size(n: float) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+def get_message_mime(token: str, message_id: str) -> bytes:
+    """Fetches a message's raw MIME content (RFC 822 / .eml) via Graph's
+    $value endpoint -- this already carries the full conversation context
+    (quoted replies) that Outlook embedded in the message body."""
+    url = f"{GRAPH}/me/messages/{quote(message_id, safe='')}/$value"
+    r = requests.get(url, headers=_headers(token), timeout=30)
+    if not r.ok:
+        raise GraphError(f"GET {url} -> {r.status_code}: {r.text[:300]}")
+    return r.content
 
 
 def upload_file(token: str, drive_id: str, folder_item_id: str, filename: str, content: bytes) -> dict:
