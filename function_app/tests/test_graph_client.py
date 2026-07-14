@@ -110,6 +110,42 @@ def test_upload_rejects_oversized_content():
         assert "simple-upload" in str(e)
 
 
+def test_upload_requests_fail_on_conflict(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 201
+
+        def json(self):
+            return {"id": "new-item"}
+
+    def fake_put(url, headers=None, data=None, timeout=None):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(graph_client.requests, "put", fake_put)
+    graph_client.upload_file("tok", "b!driveXYZ", "folder1", "notes.txt", b"hello")
+
+    assert "@microsoft.graph.conflictBehavior=fail" in calls[0]
+
+
+def test_upload_raises_conflict_error_on_409(monkeypatch):
+    class FakeResponse:
+        ok = False
+        status_code = 409
+        text = "nameAlreadyExists"
+
+    monkeypatch.setattr(graph_client.requests, "put", lambda url, headers=None, data=None, timeout=None: FakeResponse())
+
+    try:
+        graph_client.upload_file("tok", "b!driveXYZ", "folder1", "notes.txt", b"hello")
+        assert False, "expected GraphConflictError"
+    except graph_client.GraphConflictError as e:
+        assert e.filename == "notes.txt"
+        assert "already exists" in str(e)
+
+
 def test_get_message_mime_returns_raw_bytes(monkeypatch):
     calls = []
 

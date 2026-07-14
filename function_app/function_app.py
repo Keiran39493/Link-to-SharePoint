@@ -128,7 +128,7 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
     if not files and not emails:
         return _json({"error": "Nothing to file: no attachments or email in the request."}, 400)
 
-    uploaded, skipped = [], []
+    uploaded, skipped, conflicts = [], [], []
     for it in files:
         name = it.get("name") or "filed-document"
         content_b64 = it.get("contentBytes")
@@ -144,6 +144,11 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
             )
             uploaded.append(name)
             logging.info("recordChoice: uploaded %r (%d bytes)", name, len(content))
+        except graph_client.GraphConflictError:
+            # A file with this name is already there -- never overwrite it silently;
+            # the caller has to rename and try again.
+            logging.info("recordChoice: name conflict for %r -- not overwriting", name)
+            conflicts.append(name)
         except (graph_client.GraphError, ValueError) as e:
             logging.warning("recordChoice upload %r: %s", name, e)
             return _json({"error": f"Upload failed for {name}: {e}"}, 502)
@@ -162,12 +167,16 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
             )
             uploaded.append(name)
             logging.info("recordChoice: uploaded email %r (%d bytes)", name, len(content))
+        except graph_client.GraphConflictError:
+            logging.info("recordChoice: name conflict for email %r -- not overwriting", name)
+            conflicts.append(name)
         except graph_client.GraphError as e:
             logging.warning("recordChoice email upload %r: %s", name, e)
             return _json({"error": f"Could not save the email as .eml: {e}"}, 502)
 
-    # If we were asked to file something but uploaded nothing, that is a failure -- say so.
-    if (files or emails) and not uploaded:
+    # If we were asked to file something but uploaded nothing, and nothing was a
+    # recognised conflict either, that's a genuine failure -- say so.
+    if (files or emails) and not uploaded and not conflicts:
         return _json(
             {
                 "error": "Could not read the attachment or email contents, so nothing was "
@@ -181,7 +190,7 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
     # emails carry no recommendation, but the row still records where they were filed).
     for it in files + emails:
         name = it.get("name") or "filed-document"
-        if name in skipped:
+        if name in skipped or name in conflicts:
             continue
         storage.append_decision({
             "documentName": name,
@@ -199,6 +208,6 @@ def record_choice(req: func.HttpRequest) -> func.HttpResponse:
             "mode": mode,
         })
 
-    return _json({"status": "ok", "uploaded": uploaded, "skipped": skipped})
+    return _json({"status": "ok", "uploaded": uploaded, "skipped": skipped, "conflicts": conflicts})
 
 

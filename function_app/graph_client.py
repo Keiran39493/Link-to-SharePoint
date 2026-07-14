@@ -32,6 +32,16 @@ class GraphError(Exception):
     pass
 
 
+class GraphConflictError(GraphError):
+    """Raised when the upload would silently overwrite an existing file
+    (Graph returns 409 because we explicitly ask it to fail on conflict
+    instead of replacing)."""
+
+    def __init__(self, filename: str):
+        self.filename = filename
+        super().__init__(f"A file named '{filename}' already exists in this folder.")
+
+
 def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
@@ -126,19 +136,25 @@ def upload_file(token: str, drive_id: str, folder_item_id: str, filename: str, c
             f"Attachment is {len(content)} bytes, over Graph's {UPLOAD_LIMIT_BYTES}-byte "
             "simple-upload limit. Larger files need a resumable upload session (not implemented here)."
         )
+    # @microsoft.graph.conflictBehavior=fail tells Graph to reject the write
+    # (409) instead of its default of silently replacing an existing file —
+    # we never want an overwrite to happen invisibly; the caller is expected
+    # to have the user pick a different name instead.
     if folder_item_id == "root":
         # Drive root: documented path syntax is /drives/{id}/root:/{name}:/content
         # (NOT items/root: — "root" is not a real parent item-id).
-        url = f"{GRAPH}/drives/{drive_id}/root:/{quote(filename)}:/content"
+        url = f"{GRAPH}/drives/{drive_id}/root:/{quote(filename)}:/content?@microsoft.graph.conflictBehavior=fail"
     else:
         # A real folder item-id: address by parent-id path form.
-        url = f"{GRAPH}/drives/{drive_id}/items/{folder_item_id}:/{quote(filename)}:/content"
+        url = f"{GRAPH}/drives/{drive_id}/items/{folder_item_id}:/{quote(filename)}:/content?@microsoft.graph.conflictBehavior=fail"
     r = requests.put(
         url,
         headers={**_headers(token), "Content-Type": "application/octet-stream"},
         data=content,
         timeout=30,
     )
+    if r.status_code == 409:
+        raise GraphConflictError(filename)
     if not r.ok:
         raise GraphError(f"PUT {url} -> {r.status_code}: {r.text[:300]}")
     return r.json()

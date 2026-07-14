@@ -183,6 +183,8 @@
       font-family:var(--sans);font-size:11px;cursor:pointer;padding:4px 6px;
     }
     .rename-cancel:hover{color:var(--text);}
+    .rename-conflict{font-size:11.5px;color:var(--danger);margin-top:5px;}
+    .rename-conflict.hidden{display:none;}
     /* pencil affordance on the selected single attachment */
     .att .edit-name{
       flex:0 0 auto;width:26px;height:26px;border-radius:4px;border:none;background:transparent;
@@ -423,6 +425,7 @@
           <input type="text" id="renameInput" spellcheck="false" />
           <button class="rename-cancel" id="renameCancel" title="Reset name">Reset</button>
         </div>
+        <div class="rename-conflict hidden" id="renameConflict"></div>
 
         <!-- Save-email-as-.eml option -->
         <div class="eml-block" id="emlBlock">
@@ -664,7 +667,7 @@ function renderAttachments(){
   list.innerHTML=state.attachments.map(a=>{
     const isSel = multi ? state.selectedIds.includes(a.id) : a.id===state.selectedAttId;
     const shown = a.customName || a.name;
-    const pencil = (!multi && isSel)
+    const pencil = isSel
       ? `<button class="edit-name" data-edit="${esc(a.id)}" title="Rename before filing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>`
       : "";
     return `<div class="att ${isSel?'sel':''} ${multi?'multi':''}" data-id="${esc(a.id)}">
@@ -693,8 +696,6 @@ function renderAttachments(){
   // pencil clicks
   list.querySelectorAll(".edit-name").forEach(b=>b.addEventListener("click",()=>openRename(b.dataset.edit)));
 
-  // rename row visibility (single mode only, and closed by default)
-  if(multi){ $("renameRow").classList.add("hidden"); }
   // guidance hint
   if(!multi && !state.eml && state.selectedAttId==null && n>=1){
     $("attHint").textContent = "Tip: tap the file to select it, or tick \u201cSave the email itself\u201d below to file just the message.";
@@ -711,14 +712,17 @@ function openRename(id){
   row.classList.remove("hidden");
   input.value = isEml ? emlName() : (a.customName || a.name);
   input.focus(); input.select();
-  input.oninput = ()=>{ if(isEml) state.emlCustomName=input.value; else a.customName=input.value; renderEmlBlock(); };
-  input.onkeydown = (e)=>{ if(e.key==="Enter"){ row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice(); } };
+  clearRenameConflict();
+  input.oninput = ()=>{ if(isEml) state.emlCustomName=input.value; else a.customName=input.value; renderEmlBlock(); clearRenameConflict(); };
+  input.onkeydown = (e)=>{ if(e.key==="Enter"){ row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice(); clearRenameConflict(); } };
   $("renameCancel").onclick = ()=>{
     if(isEml){ state.emlCustomName=null; input.value=emlDefaultName(); }
     else { a.customName=null; input.value=a.name; }
-    row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice();
+    row.classList.add("hidden"); renderAttachments(); renderEmlBlock(); reflectChoice(); clearRenameConflict();
   };
 }
+function clearRenameConflict(){ const c=$("renameConflict"); c.textContent=""; c.classList.add("hidden"); }
+function showRenameConflict(msg){ const c=$("renameConflict"); c.textContent=msg; c.classList.remove("hidden"); }
 
 function emlDefaultName(){ return (state.subject||"email")+".eml"; }
 function emlName(){ return state.emlCustomName || emlDefaultName(); }
@@ -752,6 +756,8 @@ function wireModeControls(){
       // collapse back to first selected
       state.selectedAttId = state.selectedIds[0] || state.attachments[0]?.id || null;
     }
+    $("renameRow").classList.add("hidden");
+    clearRenameConflict();
     onSelectionChanged();
   });
 
@@ -765,6 +771,7 @@ function wireModeControls(){
       state.selectedAttId=null; state.selectedIds=[];
     }
     $("renameRow").classList.add("hidden");
+    clearRenameConflict();
     renderEmlBlock();
     onSelectionChanged();
   });
@@ -849,19 +856,35 @@ if(typeof Office!=="undefined"){
 // SharePoint tree
 // ============================================================
 async function loadRoot(){ state.cwd={driveId:"root",itemId:"root",name:"SharePoint",crumbs:[]}; await listCurrent(); }
+// Shared by folder browsing (listCurrent) and the pre-file duplicate-name
+// check (findNameConflicts) — both just need "what's already in this folder".
+async function fetchChildren(loc){
+  if(API.listChildren){
+    const headers=await authHeader();
+    const u=`${API.listChildren}?driveId=${encodeURIComponent(loc.driveId)}&itemId=${encodeURIComponent(loc.itemId)}`;
+    const r=await fetch(u,{headers}); if(!r.ok) throw new Error("list "+r.status);
+    return (await r.json()).items;
+  }
+  return await MOCK.list(loc);
+}
 async function listCurrent(){
   $("listing").innerHTML='<div class="listing-loading pulse">Loading…</div>';
   renderCrumbs();
   let items;
-  try{
-    if(API.listChildren){
-      const headers=await authHeader();
-      const u=`${API.listChildren}?driveId=${encodeURIComponent(state.cwd.driveId)}&itemId=${encodeURIComponent(state.cwd.itemId)}`;
-      const r=await fetch(u,{headers}); if(!r.ok) throw new Error("list "+r.status);
-      items=(await r.json()).items;
-    }else{ items=await MOCK.list(state.cwd); }
-  }catch(e){ $("listing").innerHTML=`<div class="listing-loading">Couldn't load this folder. ${esc(e.message)}</div>`; return; }
+  try{ items=await fetchChildren(state.cwd); }
+  catch(e){ $("listing").innerHTML=`<div class="listing-loading">Couldn't load this folder. ${esc(e.message)}</div>`; return; }
   renderListing(items);
+}
+// Checks the chosen destination folder for files that already have one of
+// the names we're about to file. Mirrors traditional file-explorer "a file
+// with this name already exists" behaviour: we never silently overwrite, so
+// any hit here must be resolved by renaming before the file/eml goes up.
+async function findNameConflicts(fileItems){
+  let existing;
+  try{ existing=await fetchChildren(state.chosen); }
+  catch(e){ return []; }  // can't verify right now — the backend upload will still refuse an overwrite
+  const existingNames=new Set((existing||[]).filter(it=>it.type!=="folder").map(it=>(it.name||"").trim().toLowerCase()));
+  return fileItems.filter(it=>existingNames.has((it.name||"").trim().toLowerCase())).map(it=>it.name);
 }
 function renderCrumbs(){
   const c=$("crumbs");
@@ -1143,6 +1166,22 @@ function reflectChoice(){
   }
   $("err").textContent="";
 }
+// A file/email with one of these names is already sitting in the destination
+// folder. Like a traditional file explorer's "already exists" prompt, we
+// don't offer an overwrite option — open the rename UI for the offending
+// item and make the user pick a different name before they can try again.
+function showNameConflict(conflictNames, mode){
+  const first=conflictNames[0];
+  const extra=conflictNames.length>1 ? ` (+${conflictNames.length-1} more)` : "";
+  $("err").textContent=`"${first}"${extra} already exists in this folder — change the name and try again.`;
+  const targetId = mode==="eml" ? "__eml__" : (state.attachments.find(x=>selectedName(x)===first)||{}).id;
+  if(targetId){
+    openRename(targetId);
+    showRenameConflict(conflictNames.length>1
+      ? `Already exists in this folder, along with ${conflictNames.length-1} other selected name(s) — please choose a different name.`
+      : `Already exists in this folder — please choose a different name.`);
+  }
+}
 $("fileBtn").addEventListener("click", submit);
 async function submit(){
   const mode=currentMode();
@@ -1175,6 +1214,16 @@ async function submit(){
     items=[{ kind:"email", name:emlName(), messageId:state.messageId, subject:state.subject }];
   }
 
+  // Never overwrite — if any of these names already exist in the destination,
+  // stop here and make the user rename before we go anywhere near the network.
+  let preConflicts=[];
+  try{ preConflicts=await findNameConflicts(items); }catch(e){ preConflicts=[]; }
+  if(preConflicts.length){
+    btn.disabled=false; btn.textContent = state.chosenFromRec ? "Accept & file here" : "File here";
+    showNameConflict(preConflicts, mode);
+    return;
+  }
+
   const payload={
     mode, items,
     chosen:state.chosen, recommendations:recsAllowed()?state.recommendations:[],
@@ -1197,6 +1246,18 @@ async function submit(){
       if(result && Array.isArray(result.skipped) && result.skipped.length){
         console.warn("Some files were skipped:", result.skipped);
         skippedNames=result.skipped;
+      }
+      // Belt-and-braces: the backend also refuses to overwrite (someone else may have
+      // filed a same-named file between our pre-check above and this upload landing).
+      if(result && Array.isArray(result.conflicts) && result.conflicts.length){
+        const filedAt=new Date().toISOString();
+        const uploadedNames=result.uploaded||[];
+        items.filter(it=>uploadedNames.includes(it.name)).forEach(it=>{
+          addHistoryEntry({name:it.name, path:state.chosen.path, timestamp:filedAt});
+        });
+        btn.disabled=false; btn.textContent = state.chosenFromRec ? "Accept & file here" : "File here";
+        showNameConflict(result.conflicts, mode);
+        return;
       }
     }else{
       await new Promise(r=>setTimeout(r,700));
